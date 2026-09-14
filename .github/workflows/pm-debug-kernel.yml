@@ -1,0 +1,79 @@
+name: Build PM-debug kernel
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build kernel and boot.img
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential flex bison libssl-dev libelf-dev bc \
+            ccache clang llvm lld python3
+          ccache --set-config=max_size=10G
+          ccache --set-config=sloppiness=file_macro,locale,time_macros
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-pmdebug-${{ github.sha }}
+          restore-keys: ccache-pmdebug-
+
+      - name: Build
+        run: |
+          export CCACHE_DIR=~/.ccache
+          export CC="ccache clang"
+          cp sm8550-pmdebug.config .config
+          make -j"$(nproc)" ARCH=arm64 LLVM=1 olddefconfig
+          echo "--- PM debug options as resolved by kconfig ---"
+          grep -E "CONFIG_PM_DEBUG|CONFIG_PM_SLEEP_DEBUG|CONFIG_PM_ADVANCED_DEBUG|CONFIG_DPM_WATCHDOG" .config
+          make -j"$(nproc)" ARCH=arm64 LLVM=1
+          echo "kernel_release=$(make kernelrelease -s)" >> "$GITHUB_ENV"
+
+      - name: Assemble boot.img
+        run: |
+          # Same layout the prebuilt sheng boot images use; cmdline copied from
+          # the running device so the rootfs is found identically.
+          cat arch/arm64/boot/Image.gz \
+              arch/arm64/boot/dts/qcom/sm8550-xiaomi-sheng.dtb \
+              > Image.gz-dtb_sheng
+          curl -fsSL -o mkbootimg \
+            https://raw.githubusercontent.com/ianchb/debian-sheng/master/mkbootimg
+          chmod +x mkbootimg
+          ./mkbootimg \
+            --kernel Image.gz-dtb_sheng \
+            --cmdline "root=PARTLABEL=userdata quiet splash plymouth.ignore-serial-consoles fbcon=map:1" \
+            --base 0x00000000 \
+            --kernel_offset 0x00008000 \
+            --tags_offset 0x01e00000 \
+            --pagesize 4096 \
+            --id \
+            -o boot-pmdebug.img
+          ls -la boot-pmdebug.img
+
+      - name: Upload boot.img
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-pmdebug
+          path: boot-pmdebug.img
+          if-no-files-found: error
+
+      - name: Upload modules
+        run: |
+          make -j"$(nproc)" ARCH=arm64 LLVM=1 \
+            INSTALL_MOD_PATH=modroot INSTALL_MOD_STRIP=1 modules_install
+          tar -C modroot -czf modules-pmdebug.tar.gz lib/modules
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: modules-pmdebug
+          path: modules-pmdebug.tar.gz
+          if-no-files-found: error
