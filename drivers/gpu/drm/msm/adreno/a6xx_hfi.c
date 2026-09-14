@@ -128,8 +128,14 @@ static int a6xx_hfi_wait_for_msg_interrupt(struct a6xx_gmu *gmu, u32 id, u32 seq
 		/* We may timeout because the GMU is temporarily wedged from
 		 * pending faults from the GPU and we are taking a devcoredump.
 		 * Wait until the MMU is resumed and try again.
+		 *
+		 * Bound the wait for the same reason as in a6xx_gmu_set_oob():
+		 * the completion is signalled only after the fault handler
+		 * acquires gpu->lock, which the recovery path already holds.
 		 */
-		wait_for_completion(&a6xx_gpu->base.fault_coredump_done);
+		if (!wait_for_completion_timeout(&a6xx_gpu->base.fault_coredump_done,
+						 msecs_to_jiffies(1000)))
+			break;
 	} while (true);
 
 	if (ret) {
