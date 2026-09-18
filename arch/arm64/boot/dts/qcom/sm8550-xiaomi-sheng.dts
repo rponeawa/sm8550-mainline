@@ -225,6 +225,21 @@
 			no-map;
 		};
 
+		/*
+		 * Persist the kernel log across a reset so that a suspend that
+		 * never returns can be diagnosed. Sits in the 2 MiB between
+		 * llcc_lpi_mem and the 4 GiB boundary.
+		 */
+		ramoops_mem: ramoops@ffe00000 {
+			compatible = "ramoops";
+			reg = <0 0xffe00000 0 0x200000>;
+			console-size = <0x80000>;
+			record-size = <0x40000>;
+			pmsg-size = <0x40000>;
+			max-reason = <5>;
+			no-map;
+		};
+
 		/* Required for libcamera to allocate buffers when cma is used. */
 		linux,cma {
 			compatible = "shared-dma-pool";
