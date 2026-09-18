@@ -34,7 +34,11 @@ jobs:
           cp sm8550-pmdebug.config .config
           make -j"$(nproc)" ARCH=arm64 LLVM=1 olddefconfig
           echo "--- PM debug options as resolved by kconfig ---"
-          grep -E "CONFIG_PM_DEBUG|CONFIG_PM_SLEEP_DEBUG|CONFIG_PM_ADVANCED_DEBUG|CONFIG_DPM_WATCHDOG" .config
+          grep -E "CONFIG_EXPERT|CONFIG_PM_DEBUG|CONFIG_PM_SLEEP_DEBUG|CONFIG_PM_ADVANCED_DEBUG|CONFIG_DPM_WATCHDOG|CONFIG_PSTORE_RAM" .config
+          # These are the point of this build; fail loudly instead of shipping
+          # a kernel that silently lacks them.
+          grep -q "^CONFIG_DPM_WATCHDOG=y" .config || { echo "DPM_WATCHDOG was dropped"; exit 1; }
+          grep -q "^CONFIG_PSTORE_RAM=y" .config || { echo "PSTORE_RAM was dropped"; exit 1; }
           make -j"$(nproc)" ARCH=arm64 LLVM=1
           echo "kernel_release=$(make kernelrelease -s)" >> "$GITHUB_ENV"
 
